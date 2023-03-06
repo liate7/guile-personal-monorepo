@@ -1,0 +1,127 @@
+(define-module (liate email-feeds)
+  ;; #:declarative? #t
+  #:use-module (srfi srfi-1)
+  #:use-module (srfi srfi-19)
+  #:use-module (ice-9 binary-ports)
+  #:use-module (ice-9 ftw)
+  #:use-module (sxml simple)
+  #:use-module (email email)
+  #:use-module (pipe)
+  #:use-module (liate utils lists)
+  #:use-module (liate utils alists)
+  #:use-module (liate utils proc-tools))
+
+(define (email->atom-entry-author email)
+  (let* ((headers (email-headers email))
+         (author  (and=> (assoc-ref headers 'from) first))
+         (name    (and=> author (curry assoc 'name)))
+         (address (and=> author (curry assoc 'address))))
+    `(author (name ,(or (and=> name cdr) "Unknown"))
+             ,@(if address `((email ,(cdr address))) '()))))
+
+(define (email->atom-entry-id email)
+  (let ((headers (email-headers email)))
+    `(id ,(or (assoc-ref headers 'message-id)
+              #;(new-uuid)))))
+
+(define (email->atom-entry-title email)
+  `(title ,(assoc-ref (email-headers email) 'subject)))
+
+(define (email->atom-entry-updated email)
+  `(updated ,(date->string (assoc-ref (email-headers email)
+                                      'date)
+                           "~4")))
+
+(define* (has-mime-type type #:optional subtype . options)
+  (lambda (entity)
+    (let* ((mime-type (assoc-ref (mime-entity-headers entity) 'content-type)))
+      (and (equal? (assoc-ref mime-type 'type) type)
+           (if subtype
+               (equal? (assoc-ref mime-type 'subtype) subtype)
+               #t)
+           (alist-<=? mime-type
+                      (map (pair-juxt (compose keyword->symbol car) cdr)
+                                 (plist->alist options)))))))
+
+(define (get-best-content body)
+  (if (string? body)
+      `((@ (type ,(if (string-contains body "<!DOCTYPE html>") 'html 'text)))
+        ,body)
+      (let ((textual (filter (has-mime-type 'text) body))
+            (html    (filter (has-mime-type 'text 'html) body)))
+        (cond ((not (null? html))
+               `((@ (type html))
+                 ,(mime-entity-body (first html))))
+              ((not (null? textual))
+               `((@ (type text))
+                 ,(mime-entity-body (first textual))))
+              (else '())))))
+
+(define (email->atom-entry-content email)
+  (let ((body (email-body email)))
+    `(content
+      ,@(get-best-content body))))
+
+(define (email->atom-entry email)
+  `(entry
+    ,(email->atom-entry-id email)
+    ,(email->atom-entry-title email)
+    ,(email->atom-entry-updated email)
+    ,(email->atom-entry-author email)
+    ,(email->atom-entry-content email)))
+
+(define (email-date<? email1 email2)
+  (time<? (date->time-utc (assoc-ref (email-headers email1) 'date))
+          (date->time-utc (assoc-ref (email-headers email2) 'date))))
+(define (email-date>? email1 email2)
+  (time>? (date->time-utc (assoc-ref (email-headers email1) 'date))
+          (date->time-utc (assoc-ref (email-headers email2) 'date))))
+
+(define (emails->atom-feed-id emails)
+  (let* ((proto (car emails))
+         (headers (email-headers proto))
+         (from (assoc-ref headers 'from))
+         (addr (assoc-ref (first from) 'address)))
+    `(id ,(string-append "mailto:" addr))))
+
+(define (emails->atom-feed-title emails)
+  (let* ((proto (car (sort emails email-date>?)))
+         (headers (email-headers proto))
+         (list-id (assoc-ref headers 'list-id))
+         (from (assoc-ref headers 'from))
+         (name (assoc-ref (first from) 'name)))
+    `(title ,(or list-id name "???"))))
+
+(define (emails->atom-feed-author emails)
+  (email->atom-entry-author (first (sort emails email-date>?))))
+
+(define (emails->atom-feed emails)
+  `(*TOP*
+    (*PI* xml "version=\"1.0\" encoding=\"utf-8\"")
+    (feed (@ (xmlns "http://www.w3.org/2005/Atom"))
+          ,(emails->atom-feed-id emails)
+          ,(emails->atom-feed-title emails)
+          ,(emails->atom-feed-author emails)
+          (updated ,(date->string (current-date 0) "~4"))
+          (generator ,(format #f "~a" (module-name (current-module))))
+          ,@(map email->atom-entry emails))))
+
+(define (read-maildir path)
+  (define (read-from-directory path)
+    (map (λ (name)
+           (call-with-input-file (string-append path "/" name)
+             (compose parse-email get-bytevector-all)))
+         (scandir path (λ (f) (not (member f '("." "..")))))))
+  (mapcat (compose read-from-directory (curry string-append path "/"))
+          '("cur" "new" "tmp")))
+
+(define (emails->feeds emails)
+  (->> emails
+       (group-by (λ (e)
+				   (and=> (assoc-ref (email-headers e) 'from)
+						  (λ (e) (assoc-ref (car e) 'address)))))
+       (map (pair-juxt car (compose emails->atom-feed cdr)))))
+
+(define (replace-tags feed replace-spec)
+  ""
+  feed)
