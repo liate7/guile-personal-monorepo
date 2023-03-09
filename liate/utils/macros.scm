@@ -5,7 +5,7 @@
             repeat
             repeat-thunk
             update-place! zap!
-            λ%))
+            failure->))
 
 ;;; Combined binding-conditional macros
 
@@ -54,3 +54,14 @@ Like CL zapf, as defined [[https://stevelosh.com/blog/2016/08/playing-with-synta
        #`(set! place
                (let ((#,(datum->syntax x '%) place))
                  expr))))))
+
+(define-syntax failure->
+  ;; A convenience macro for dealing with functions that take a failure continuation
+  ;; Converts (failure-> (foo) (bar) (baz)) into (foo (lambda () (bar (lambda () (baz)))))
+  (syntax-rules ()
+    ((failure-> expr)
+     expr)
+    ((failure-> (expr ...) next next* ...)
+     (expr ...
+           (lambda ()
+             (failure-> next next* ...))))))
