@@ -1,7 +1,9 @@
 (define-module (liate utils io)
   #:use-module (ice-9 textual-ports)
+  #:use-module (ice-9 binary-ports)
   #:export (get-all-lines
-            open-tcp-port))
+            open-tcp-port
+            port-copy))
 
 (define (get-all-lines port)
   "Reads from PORT until an end of file, decoding characters like `get-string-n`.
@@ -26,3 +28,11 @@ If no character precedes the end of file, the end-of-file object is returned."
          (sock (socket (addrinfo:fam ai) (addrinfo:socktype ai) (addrinfo:protocol ai))))
     (connect sock (addrinfo:addr ai))
     sock))
+
+(define (port-copy from to)
+  "Copies from FROM to TO until an end of file."
+  (let rec ()
+    (let ((data (get-bytevector-n from 1024)))
+      (unless (eof-object? data)
+        (put-bytevector to data)
+        (rec)))))
