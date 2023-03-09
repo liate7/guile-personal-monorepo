@@ -280,22 +280,77 @@ the attributes may be `*` to match any value of the attribute).
 (define (throw-mpd-error mesg-list command error+index)
   (error (string-join mesg-list " ") command error+index))
 
-(define* ((read-single-key-value #:optional (success-delimiter "OK")) port)
-  (let rec ((response (hashmap)))
-    (let ((line (get-line port)))
-      (if (eof-object? line)
-          (error "EOF")
-          (match (string-split line char-set:whitespace)
-            ((success-delimiter)
-             (if (hashmap-empty? response) #f response))
-            (("ACK" error+index command . message)
-             (throw-mpd-error message command error+index))
-            (("binary:" (= string->number size))
-             (error "Binary not a key-value"))
-            (((? key-name?) . _rest)
-             (rec (apply hashmap-set response (get-key-value line))))
-            (_else
-             (error "Invalid response line")))))))
+(define* ((read-single-key-value #:key mapper (success-delimiter "OK")) port)
+  (define (default-adder map k-v)
+    (apply hashmap-set map k-v))
+
+  (define ((alist-adder alist) map k-v)
+    (match-let* (((key val) k-v)
+                 (val-mod identity)
+                 ((or #f (val-mod)
+                      (key val-mod))
+                  (assoc-ref alist key)))
+      (hashmap-set map key (val-mod val))))
+
+  (define (mapper->adder mapper)
+    (match mapper
+      (#f default-adder)
+      ((? list?)
+       (alist-adder mapper))))
+
+  (let ((adder (mapper->adder mapper)))
+    (let rec ((response (hashmap)))
+      (let ((line (get-line port)))
+        (if (eof-object? line)
+            (error "EOF")
+            (match (string-split line char-set:whitespace)
+              ((success-delimiter)
+               (if (hashmap-empty? response) #f response))
+              (("ACK" error+index command . message)
+               (throw-mpd-error message command error+index))
+              (("binary:" (= string->number size))
+               (error "Binary not a key-value"))
+              (((? key-name?) . _rest)
+               (rec (adder response (get-key-value line))))
+              (_else
+               (error "Invalid response line"))))))))
+
+(define (read-boolean str)
+  (match str
+    ("0" #f)
+    ("1" #t)))
+
+(define (read-oneshot-status str)
+  (match str
+    ("0" #f)
+    ("1" #t)
+    ("oneshot" 'oneshot)))
+
+(define (read-audio-format str)
+  (map string->number (string-split str #\:)))
+
+(define read-status
+  (read-single-key-value
+   #:mapper `((volume ,string->number)
+              (repeat ,read-boolean)
+              (random ,read-boolean)
+              (single ,read-oneshot-status)
+              (consume ,read-oneshot-status)
+              (playlist queue-revision ,string->number)
+              (playlistlength playlist-length ,string->number)
+              (state ,string->symbol)
+              (song song-index ,string->number)
+              (songid song-id ,string->number)
+              (next-song next-song-index ,string->number)
+              (next-songid next-song-id ,string->number)
+              (time integer-time ,string->number)
+              (elapsed ,string->number)
+              (duration ,string->number)
+              (bitrate ,string->number)
+              (xfade crossfade ,string->number)
+              (mixrampdb mixramp-threshold ,string->number)
+              (mixrampdelay mixramp-delay ,string->number)
+              (audio audio-format ,read-audio-format))))
 
 (define (read-success port)
   (match (string-split (get-line port) char-set:whitespace)
@@ -339,7 +394,7 @@ the attributes may be `*` to match any value of the attribute).
 
 ;;; Status
 
-(define-command (status) (read-single-key-value))
+(define-command (status) read-status)
 
 (define-command ((current-song currentsong)) (read-single-key-value))
 
