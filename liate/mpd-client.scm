@@ -287,7 +287,7 @@ the attributes may be `*` to match any value of the attribute).
           (error "EOF")
           (match (string-split line char-set:whitespace)
             ((success-delimiter)
-             (if (hashmap-empty? response) #t response))
+             (if (hashmap-empty? response) #f response))
             (("ACK" error+index command . message)
              (throw-mpd-error message command error+index))
             (("binary:" (= string->number size))
