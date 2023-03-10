@@ -9,6 +9,7 @@
   #:use-module (srfi srfi-2) ; and-let*
   #:use-module (srfi srfi-9) ; records
   #:use-module (srfi srfi-9 gnu)
+  #:use-module (srfi srfi-19) ; dates
   #:use-module (srfi srfi-26) ; cut & friends
   #:use-module (srfi srfi-128) ; comparators
   #:use-module (srfi srfi-146 hash) ; persistent hashmaps
@@ -332,27 +333,44 @@ the attributes may be `*` to match any value of the attribute).
   (map string->number (string-split str #\:)))
 
 (define read-status
-  (read-single-key-value
-   #:mapper `((volume ,string->number)
-              (repeat ,read-boolean)
-              (random ,read-boolean)
-              (single ,read-oneshot-status)
-              (consume ,read-oneshot-status)
-              (playlist queue-revision ,string->number)
-              (playlistlength playlist-length ,string->number)
-              (state ,string->symbol)
-              (song song-index ,string->number)
-              (songid song-id ,string->number)
-              (next-song next-song-index ,string->number)
-              (next-songid next-song-id ,string->number)
-              (time integer-time ,string->number)
-              (elapsed ,string->number)
-              (duration ,string->number)
-              (bitrate ,string->number)
-              (xfade crossfade ,string->number)
-              (mixrampdb mixramp-threshold ,string->number)
-              (mixrampdelay mixramp-delay ,string->number)
-              (audio audio-format ,read-audio-format))))
+  (compose (cute hashmap-delete <> 'time)
+           (read-single-key-value
+            #:mapper `((volume ,string->number)
+                       (repeat ,read-boolean)
+                       (random ,read-boolean)
+                       (single ,read-oneshot-status)
+                       (consume ,read-oneshot-status)
+                       (playlist queue-revision ,string->number)
+                       (playlistlength playlist-length ,string->number)
+                       (state ,string->symbol)
+                       (song song-index ,string->number)
+                       (songid song-id ,string->number)
+                       (next-song next-song-index ,string->number)
+                       (next-songid next-song-id ,string->number)
+                       (elapsed ,string->number)
+                       (duration ,string->number)
+                       (bitrate ,string->number)
+                       (xfade crossfade ,string->number)
+                       (mixrampdb mixramp-threshold ,string->number)
+                       (mixrampdelay mixramp-delay ,string->number)
+                       (audio audio-format ,read-audio-format)))))
+
+(define read-song
+  (compose (cute hashmap-delete <> 'Time)
+           (read-single-key-value
+            #:mapper `((AlbumArtist album-artist)
+                       (Composer composer)
+                       (Title title)
+                       (Last-Modified last-modified ,(cute string->date <> "~Y-~m-~dT~H:~M:~SZ"))
+                       (Label label)
+                       (Album album)
+                       (Genre genre)
+                       (Id song-id ,string->number)
+                       (Format audio-format ,read-audio-format)
+                       (duration ,string->number)
+                       (Artist artist)
+                       (Track track ,string->number)
+                       (Pos pos ,string->number)))))
 
 (define (read-success port)
   (match (string-split (get-line port) char-set:whitespace)
@@ -398,7 +416,7 @@ the attributes may be `*` to match any value of the attribute).
 
 (define-command (status) read-status)
 
-(define-command ((current-song currentsong)) (read-single-key-value))
+(define-command ((current-song currentsong)) read-song)
 
 (define-command ((clear-error clearerror)) read-success)
 
