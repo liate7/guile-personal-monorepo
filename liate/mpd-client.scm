@@ -287,8 +287,10 @@ the attributes may be `*` to match any value of the attribute).
   (define ((alist-adder alist) map k-v)
     (match-let* (((key val) k-v)
                  (val-mod identity)
-                 ((or #f (val-mod)
-                      (key val-mod))
+                 ((or ((? procedure? val-mod))
+                      ((? symbol? key))
+                      (key val-mod)
+                      #f)
                   (assoc-ref alist key)))
       (hashmap-set map key (val-mod val))))
 
