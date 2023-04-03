@@ -1,14 +1,19 @@
 (define-module (liate goblins)
+  #:use-module ((fibers) #:select (sleep))
   #:use-module (goblins)
   #:use-module (goblins actor-lib cell)
   #:use-module (goblins actor-lib methods)
+  #:use-module (goblins vat)
+  #:use-module (srfi srfi-1)
+  #:use-module (srfi srfi-2)
   #:use-module (srfi srfi-26)
   #:use-module (srfi srfi-71)
-  ;; #:use-module (pfds heaps)
-  #:export (^notifying-cell ^timer))
+  #:export (^notifying-cell ^timers))
 
-(define (^notifying-cell bcom to-notify)
+(define* (^notifying-cell bcom to-notify #:optional val)
   (define-cell inner)
+  (when val
+    (inner val))
   (define self
     (case-lambda
       (() ($ inner))
@@ -17,28 +22,54 @@
        (<- to-notify 'changed self))))
   self)
 
-(define (^timer bcom)
-  (define (order l r)
-    (< (car l) (car r)))
-  (define-cell to-notify
-    (make-heap order))
+(define (timeout-vow secs)
+  (fibrous
+   (let ((start (current-time)))
+     (sleep secs)
+     (- (current-time) start))))
+
+(define (^timers bcom)
+  (define (timer-expires-after? time after)
+    (< (car time) (car after)))
+
+  (define-cell to-notify '())
+  (define-cell paused?)
+
+  (define (on-timeout . _ignore)
+    (unless ($ paused?)
+      (and-let* ((wheel ($ to-notify))
+                 ((not (null? wheel)))
+                 (now (current-time))
+                 ((not (timer-expires-after? (list now) (car wheel)))))
+        (let ((done not-yet (span (negate (cute timer-expires-after? (list now) <>)) wheel)))
+          ($ to-notify
+             (sort (append (map (λ (timer)
+                                  (apply <-np (list-ref timer 2))
+                                  (cons (+ now (cadr timer)) (cdr timer)))
+                                done)
+                           not-yet)
+                   timer-expires-after?))))
+      (wait)))
+
   (define (wait)
-    (let* ((next (heap-min ($ to-notify)))
-           (time (car next)))
-      (sleep time)
-      (let* ((timers (map (λ (t)
-                            (cons (- (car t) time)
-                                  (cdr t)))
-                          (heap->list ($ to-notify))))
-             (finished not (partition (compose (cute <= <> 0) car) timers)))
-        (for-each (compose (curry apply <-np) caddr) finished)
-        ($ to-notify
-           (fold (λ (item heap) (heap-insert heap (cons (cadr item) (cdr item))))
-                 (list->heap not order)
-                 finished)))))
-  (methods
-   ((register time recv . args)
-    ($ to-notify (heap-insert ($ to-notify) (list time time (cons recv args))))
+    (unless ($ paused?)
+      (on (timeout-vow (min 1 (- (caar (if (null? ($ to-notify)) 1
+                                           ($ to-notify)))
+                                 (current-time))))
+          #:catch pk
+          #:finally on-timeout)))
+
+  (define (register time recv . args)
+    ($ to-notify (sort (cons (list (+ (current-time) time) time (cons recv args))
+                             ($ to-notify))
+                       timer-expires-after?))
     (wait))
-   
-   ))
+
+  (methods
+   (register register)
+
+   ((pause) ($ paused? #t))
+   ((paused?) ($ paused?))
+   ((resume)
+    ($ paused? #f)
+    (on-timeout))))
