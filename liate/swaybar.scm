@@ -107,16 +107,22 @@
   ($ bar 'init cells blocks)
   (values bar finished-cond))
 
+(define log-file
+  (make-parameter "/home/liate/.log/swaybar.scm.log"))
+
 (define (run block-specs)
   (define vat (spawn-vat))
-  (let ((bar finished-cond
-             (with-vat vat
-                       (run-in-vat block-specs))))
-    (sigaction SIGINT
-      (λ (sig)
-        (restore-signals)
-        (with-vat vat (<- bar 'quit))))
-    (perform-operation (wait-operation finished-cond))))
+  (call-with-output-file (log-file)
+    (λ (port)
+      (parameterize ((current-error-port port))
+        (let ((bar finished-cond
+                   (with-vat vat
+                             (run-in-vat block-specs))))
+          (sigaction SIGINT
+            (λ (sig)
+              (restore-signals)
+              (with-vat vat (<- bar 'quit))))
+          (perform-operation (wait-operation finished-cond)))))))
 
 (define-syntax-rule (swaybar (name ctor secs args ...) ...)
   (run (list (list 'name ctor secs args ...) ...)))
