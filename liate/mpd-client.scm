@@ -50,16 +50,6 @@
       (assert (string-prefix? "OK MPD " (get-line port)))
       (proc port))))
 
-(define* (mpd-send-raw mpd recv cmd . args)
-  "Basic primitive for sending a message to an mpd instance and getting a reply.
-Sends (string-join (cons cmd args) #\\space) to the mpd described by MPD, then
-calls RECV on the port."
-  (assert (every string? (cons cmd args)))
-  (call-with-open-mpd-port mpd
-    (λ (port)
-      (format port "~A~&" (string-join (cons cmd args) " "))
-      (recv port))))
-
 ;;;; Command helpers
 
 ;;; Type procedures
@@ -386,25 +376,46 @@ the attributes may be `*` to match any value of the attribute).
 
 ;;;; Commands
 
-(define ((make-mpd-command wire-name arg-convertors recv) mpd . args)
+(define ((make-mpd-command wire-name arg-convertors recv) . args)
+  "Creates a procedure which, when called with an open port
+(presumably connected to an MPD instance),
+sends the given command on the port and reads the response into a result."
   (define (error-if-false-result proc arg)
     (let ((res (proc arg)))
-      (or res (error (format #f "Invalid argument to ~a command" wire-name) arg))))
+      (when (not res)
+        (error (format #f "Invalid argument to ~a command" wire-name) arg))
+      (assert (string? res))
+      res))
+
   (assert (= (length args) (length arg-convertors)))
-  (apply mpd-send-raw mpd recv (symbol->string wire-name)
-         (map error-if-false-result arg-convertors args)))
+  (lambda (port)
+    (format port "~a~%"
+            (string-join (cons (symbol->string wire-name)
+                               (map error-if-false-result arg-convertors args))
+                         " "))
+    (recv port)))
 
 (define-syntax define-command
   (lambda (s)
     (syntax-case s ()
       ((define-command ((name wire-name) (args ->string-s) ...) recv)
        (let ((proc-name (datum->syntax s (symbol-append 'mpd- (syntax->datum #'name)))))
-         #`(define-public (#,proc-name mpd args ...)
-             ((make-mpd-command 'wire-name (list ->string-s ...) recv) mpd args ...))))
+         #`(define-public #,proc-name
+             (let ((proc (make-mpd-command 'wire-name (list ->string-s ...) recv)))
+               (assert (not (hash-ref commands-table 'name)))
+               (hash-set! commands-table 'name proc)
+               (lambda (mpd args ...)
+                 (call-with-open-mpd-port mpd
+                   (proc args ...)))))))
       ((define-command (name (args ->string-s) ...) recv)
        (let ((proc-name (datum->syntax s (symbol-append 'mpd- (syntax->datum #'name)))))
-         #`(define-public (#,proc-name mpd args ...)
-             ((make-mpd-command 'name (list ->string-s ...) recv) mpd args ...)))))))
+         #`(define-public #,proc-name
+             (let ((proc (make-mpd-command 'name (list ->string-s ...) recv)))
+               (assert (not (hash-ref commands-table 'name)))
+               (hash-set! commands-table 'name proc)
+               (lambda (mpd args ...)
+                 (call-with-open-mpd-port mpd
+                   (proc args ...))))))))))
 
 ;;; Status
 
