@@ -11,6 +11,7 @@
   #:use-module (ice-9 popen)
   #:use-module (ice-9 regex)
   #:use-module (ice-9 match)
+  #:use-module (ice-9 format)
   #:use-module (ice-9 textual-ports)
   #:use-module (liate goblins)
   #:export (^battery-block))
@@ -59,7 +60,7 @@
                              ('charging "CHR")
                              ('discharging "DIS")
                              ('full "FULL")
-                             (_else "UNK")))
+                             (else "UNK")))
                     (time-str (cond (time (format #f "~{~2d:~2,'0d~}" (drop-right time 1)))
                                     ((eq? state_ 'full) "n/a")
                                     (else "???"))))

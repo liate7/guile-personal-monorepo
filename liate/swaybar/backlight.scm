@@ -10,6 +10,7 @@
   #:use-module (ice-9 curried-definitions)
   #:use-module (ice-9 ports)
   #:use-module (ice-9 match)
+  #:use-module (ice-9 format)
   #:use-module (liate goblins)
   #:export (^backlight-block))
 
