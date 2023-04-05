@@ -24,7 +24,7 @@
   (methods
    ((spawn cell name ctor secs)
     (define block (spawn-named name ctor cell))
-    (<- timers 'register secs block 'tick)
+    (<- timers 'register 0 secs block 'tick)
     block)))
 
 (define (^date-block _bcom cell)
@@ -91,7 +91,7 @@
    ((init cells blocks)
     (bcom (initialized-beh cells blocks)))
    ((changed _ignore)
-    (format (current-error-port) "Not initialized yet~%"))
+    #f)
    (quit (quit '()))))
 
 (define (run-in-vat block-specs)
