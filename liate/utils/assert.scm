@@ -1,6 +1,7 @@
 (define-module (liate utils assert)
   #:use-module (ice-9 exceptions)
   #:use-module (ice-9 match)
+  #:use-module (ice-9 format)
   #:use-module (liate utils proc-tools)
   #:use-module (liate utils lists)
   #:export (assert assure))

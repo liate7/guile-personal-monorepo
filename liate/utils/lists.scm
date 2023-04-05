@@ -14,7 +14,8 @@
             tuples-in
             list-index-all
             inclusive-range
-            group-by))
+            group-by
+            mapcat))
 
 (define (flatten lst)
   "As the `tflatten' transducer, but just for lists"

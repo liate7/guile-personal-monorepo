@@ -4,6 +4,7 @@
   #:use-module (ice-9 match)
   #:use-module (ice-9 textual-ports)
   #:use-module (ice-9 string-fun)
+  #:use-module (ice-9 format)
 
   #:use-module (srfi srfi-1) ; lists
   #:use-module (srfi srfi-2) ; and-let*
