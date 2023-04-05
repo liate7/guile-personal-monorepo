@@ -64,6 +64,8 @@
 
     (methods
      ((changed _ignore)
+      (when (port-closed? port)
+        (quit blocks))
       (unless (any (compose not $) cells)
         (-> (map (λ (val)
                    (and=> ($ val)
