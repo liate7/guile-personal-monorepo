@@ -12,12 +12,16 @@
   #:use-module (srfi srfi-19) ; dates
   #:use-module (srfi srfi-26) ; cut & friends
 
+  #:use-module (goblins)
+  #:use-module (goblins vat)
+
   #:use-module (liate utils assert)
   #:use-module (liate utils io)
   #:use-module (liate utils proc-tools)
   #:use-module (liate utils hashmaps)
 
   #:export (make-mpd
+            ^mpd
             ;; commands export themselves
             mpd-host mpd-port))
 
@@ -373,6 +377,36 @@ the attributes may be `*` to match any value of the attribute).
                    ((eq? name (car kv))))
           (read-success port)
           (conv (cadr kv))))))
+
+;;;; Goblins object
+
+(define commands-table
+  (make-hash-table))
+
+(define* (^mpd bcom #:key (host *mpd-default-host*) (port *mpd-default-port*))
+  (define mpd (make-mpd #:host host #:port port))
+
+  (define (get-command name args)
+    (let ((proc (hash-ref commands-table name)))
+      (when (not proc)
+        (error "Not a valid command ~s" name))
+      (apply proc args)))
+
+  (match-lambda*
+    (('begin (cmds . args) ...)
+     (let ((body-procs (map get-command cmds args)))
+       (fibrous
+        (call-with-open-mpd-port mpd
+          (λ (port)
+            (let rec ((procs body-procs))
+              (if (null? procs) procs
+                  (cons ((car procs) port)
+                        (rec (cdr procs))))))))))
+    ((cmd . args)
+     (let ((proc (get-command cmd args)))
+       (fibrous
+        (call-with-open-mpd-port mpd
+          proc))))))
 
 ;;;; Commands
 
