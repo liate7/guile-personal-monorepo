@@ -43,12 +43,12 @@
 ;; Format:
 ;; header #\newline (array-stream (array values) ...)
 
-(define (^swaybar bcom port finished-cond pauser)
+(define (^swaybar bcom port finished-cond timers)
   (define-cell first-line? #t)
 
   (define ((quit blocks))
     (format port "]")
-    (<- pauser 'pause)
+    (<- timers 'pause)
     (on (all-of* (map (λ (block) (<- block 'quit))
                       blocks))
         (λ (_quits)
@@ -56,10 +56,6 @@
            (signal-condition! finished-cond)))))
 
   (define (initialized-beh cells blocks)
-    (scm->json header port)
-    (format port "~%[~%")
-    (force-output port)
-
     (methods
      ((changed _ignore)
       (when (port-closed? port)
@@ -83,9 +79,16 @@
       (map $ cells))
      (quit (quit blocks))))
 
+  (define (initialize! cells blocks)
+    (scm->json header port)
+    (format port "~%[~%")
+    (force-output port)
+
+    (initialized-beh cells blocks))
+
   (methods
    ((init cells blocks)
-    (bcom (initialized-beh cells blocks)))
+    (bcom (initialize! cells blocks)))
    ((changed _ignore)
     #f)
    (quit (quit '()))))
