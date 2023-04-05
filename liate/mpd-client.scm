@@ -11,12 +11,11 @@
   #:use-module (srfi srfi-9 gnu)
   #:use-module (srfi srfi-19) ; dates
   #:use-module (srfi srfi-26) ; cut & friends
-  #:use-module (srfi srfi-128) ; comparators
-  #:use-module (srfi srfi-146 hash) ; persistent hashmaps
 
   #:use-module (liate utils assert)
   #:use-module (liate utils io)
   #:use-module (liate utils proc-tools)
+  #:use-module (liate utils hashmaps)
 
   #:export (make-mpd
             ;; commands export themselves
@@ -272,11 +271,6 @@ the attributes may be `*` to match any value of the attribute).
              (rec (cddr lst) acc))
             (else
              (rec (cdr lst) (cons (car lst) acc)))))))
-
-(define* (hashmap #:key comparator . args)
-  (apply (@ (srfi srfi-146 hash) hashmap)
-         (or comparator (make-equal-comparator))
-         (remove-keyword-args args '(#:comparator))))
 
 (define (throw-mpd-error mesg-list command error+index)
   (error (string-join mesg-list " ") command error+index))
