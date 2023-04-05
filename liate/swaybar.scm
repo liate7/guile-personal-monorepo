@@ -47,6 +47,7 @@
   (define-cell first-line? #t)
 
   (define ((quit blocks))
+    "Close off the json array, stop the timers, quit the blocks, and signal are finished."
     (format port "]")
     (<- timers 'pause)
     (on (all-of* (map (λ (block) (<- block 'quit))
@@ -55,26 +56,50 @@
           (fibrous
            (signal-condition! finished-cond)))))
 
-  (define (initialized-beh cells blocks)
+  (define (cell-json cell)
+    "Ensure that CELL is set, then convert strings to {\"full_text\": str}"
+    (and=> ($ cell)
+           (λ (block)
+             (if (string? block)
+                 `((full_text . ,block))
+                 block))))
+
+  (define (write-swaybar-json cells)
+    "The actual writing process"
+    (if ($ first-line?)
+        ($ first-line? #f)
+        (format port ",~%"))
+    (-> (map cell-json cells)
+        (list->vector)
+        (scm->json port #:pretty #f))
+    (force-output port))
+
+  ;; The naive way to do this both leads to way too many updates and
+  ;; leads to the output getting clobbered sometimes.
+  ;; (Don't know why, given there should only be one writer, but who knows.)
+  ;; Instead, the system has two (post-initialization) behaviors:
+  ;; the write-next behavior writes the json on the next changed block,
+  ;; then goes to the waiting-for-tick behavior;
+  ;; the waiting-for-tick behavior waits for the timers system to send it 'tick,
+  ;; then goes to the write-next behavior.
+  (define (write-next-beh cells blocks)
     (methods
      ((changed _ignore)
       (when (port-closed? port)
         (quit blocks))
       (unless (any (compose not $) cells)
-        (if ($ first-line?)
-            ($ first-line? #f)
-            (format port ",~%"))
+        (write-swaybar-json cells)
+        (bcom (waiting-for-tick-beh cells blocks))))
+     ((tick) #f)
+     ((block-values)
+      (map $ cells))
+     (quit (quit blocks))))
 
-        (-> (map (λ (val)
-                   (and=> ($ val)
-                          (λ (block)
-                            (if (string? block)
-                                `((full_text . ,block))
-                                block))))
-                 cells)
-            (list->vector)
-            (scm->json port #:pretty #f))
-        (force-output port)))
+  (define (waiting-for-tick-beh cells blocks)
+    (methods
+     ((changed _ignore) #f)
+     ((tick)
+      (bcom (write-next-beh cells blocks)))
      ((block-values)
       (map $ cells))
      (quit (quit blocks))))
@@ -84,7 +109,7 @@
     (format port "~%[~%")
     (force-output port)
 
-    (initialized-beh cells blocks))
+    (write-next-beh cells blocks))
 
   (methods
    ((init cells blocks)
@@ -114,6 +139,7 @@
          cells))
 
   ($ bar 'init cells blocks)
+  ($ timers 'register 0 1 bar 'tick)
   (values bar finished-cond))
 
 (define log-file
