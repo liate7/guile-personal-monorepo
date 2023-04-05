@@ -60,10 +60,6 @@
     (format port "~%[~%")
     (force-output port)
 
-    (for-each (λ (block)
-                (<- block 'tick))
-              blocks)
-
     (methods
      ((changed _ignore)
       (when (port-closed? port)
