@@ -39,7 +39,9 @@
   (define (time-lst-<? l r)
     (let/ec ret
       (for-each (λ (l r)
-                  (and=> (< l r) ret))
+                  (cond ((< l r) => ret)
+                        ((> l r) => (compose ret not))
+                        (else #f)))
                 l r)
       #f))
   (and time-lst
@@ -66,6 +68,7 @@
                                 ,(format #f
                                          "⚡ ~a (~a, ~a)"
                                          % state time-str))
-                     (urgent . ,(urgent-time-left? time))))))))))
+                     (urgent . ,(and (eq? state_ 'discharging)
+                                     (urgent-time-left? time)))))))))))
    ((quit)
     ($ quit? #t))))
