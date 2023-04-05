@@ -44,7 +44,7 @@
 ;; header #\newline (array-stream (array values) ...)
 
 (define (^swaybar bcom port finished-cond pauser)
-  (define (quit)
+  (define (quit blocks)
     (format port "]")
     (<- pauser 'pause)
     (on (all-of* (map (λ (block) (<- block 'quit))
@@ -78,14 +78,14 @@
         (force-output port)))
      ((block-values)
       (map $ cells))
-     (quit quit)))
+     (quit (quit blocks))))
 
   (methods
    ((init cells blocks)
     (bcom (initialized-beh cells blocks)))
    ((changed _ignore)
     (format (current-error-port) "Not initialized yet~%"))
-   (quit quit)))
+   (quit (quit '()))))
 
 (define (run-in-vat block-specs)
   (define finished-cond (make-condition))
