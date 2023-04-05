@@ -44,6 +44,8 @@
 ;; header #\newline (array-stream (array values) ...)
 
 (define (^swaybar bcom port finished-cond pauser)
+  (define-cell first-line? #t)
+
   (define ((quit blocks))
     (format port "]")
     (<- pauser 'pause)
@@ -67,6 +69,10 @@
       (when (port-closed? port)
         (quit blocks))
       (unless (any (compose not $) cells)
+        (if ($ first-line?)
+            ($ first-line? #f)
+            (format port ",~%"))
+
         (-> (map (λ (val)
                    (and=> ($ val)
                           (λ (block)
@@ -76,7 +82,6 @@
                  cells)
             (list->vector)
             (scm->json port #:pretty #f))
-        (format port ",~%")
         (force-output port)))
      ((block-values)
       (map $ cells))
