@@ -44,7 +44,7 @@
 ;; header #\newline (array-stream (array values) ...)
 
 (define (^swaybar bcom port finished-cond pauser)
-  (define (quit blocks)
+  (define ((quit blocks))
     (format port "]")
     (<- pauser 'pause)
     (on (all-of* (map (λ (block) (<- block 'quit))
