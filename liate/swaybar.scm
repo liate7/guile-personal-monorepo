@@ -64,7 +64,7 @@
                                 block))))
                  cells)
             (list->vector)
-            (scm->json port #:pretty #t))
+            (scm->json port #:pretty #f))
         (format port ",~%")
         (force-output port)))
      ((block-values)
