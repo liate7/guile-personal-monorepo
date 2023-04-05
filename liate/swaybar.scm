@@ -44,6 +44,15 @@
 ;; header #\newline (array-stream (array values) ...)
 
 (define (^swaybar bcom port finished-cond pauser)
+  (define (quit)
+    (format port "]")
+    (<- pauser 'pause)
+    (on (all-of* (map (λ (block) (<- block 'quit))
+                      blocks))
+        (λ (_quits)
+          (fibrous
+           (signal-condition! finished-cond)))))
+
   (define (initialized-beh cells blocks)
     (scm->json header port)
     (format port "~%[~%")
@@ -69,20 +78,14 @@
         (force-output port)))
      ((block-values)
       (map $ cells))
-     ((quit)
-      (format port "]")
-      (<- pauser 'pause)
-      (on (all-of* (map (λ (block) (<- block 'quit))
-                        blocks))
-          (λ (_quits)
-            (fibrous
-             (signal-condition! finished-cond)))))))
+     (quit quit)))
 
   (methods
    ((init cells blocks)
     (bcom (initialized-beh cells blocks)))
    ((changed _ignore)
-    (format (current-error-port) "Not initialized yet~%"))))
+    (format (current-error-port) "Not initialized yet~%"))
+   (quit quit)))
 
 (define (run-in-vat block-specs)
   (define finished-cond (make-condition))
