@@ -38,17 +38,18 @@
    ((quit)
     ($ quit? #t))))
 
-(define header '((version . 1)))
+(define header `((version . 1) (stop_signal . ,SIGUSR1)))
 
 ;; Format:
 ;; header #\newline (array-stream (array values) ...)
 
-(define (^swaybar bcom port finished-cond timers)
+(define (^swaybar bcom printer finished-cond timers)
   (define-cell first-line? #t)
 
   (define ((quit blocks))
     "Close off the json array, stop the timers, quit the blocks, and signal are finished."
-    (format port "]")
+    (<- printer 'print "]\n")
+    (<- printer 'close)
     (<- timers 'pause)
     (on (all-of* (map (λ (block) (<- block 'quit))
                       blocks))
@@ -66,13 +67,13 @@
 
   (define (write-swaybar-json cells)
     "The actual writing process"
-    (if ($ first-line?)
-        ($ first-line? #f)
-        (format port ",~%"))
-    (-> (map cell-json cells)
-        (list->vector)
-        (scm->json port #:pretty #f))
-    (force-output port))
+    (<- printer 'print
+        (if ($ first-line?)
+            (begin ($ first-line? #f) "")
+            ",\n")
+        (-> (map cell-json cells)
+            (list->vector)
+            (scm->json-string #:pretty #f))))
 
   ;; The naive way to do this both leads to way too many updates and
   ;; leads to the output getting clobbered sometimes.
@@ -85,8 +86,6 @@
   (define (write-next-beh cells blocks)
     (methods
      ((changed _ignore)
-      (when (port-closed? port)
-        (quit blocks))
       (unless (any (compose not $) cells)
         (write-swaybar-json cells)
         (bcom (waiting-for-tick-beh cells blocks))))
@@ -105,9 +104,9 @@
      (quit (quit blocks))))
 
   (define (initialize! cells blocks)
-    (scm->json header port)
-    (format port "~%[~%")
-    (force-output port)
+    (<- printer 'print
+        (scm->json-string header)
+        "\n[\n")
 
     (write-next-beh cells blocks))
 
@@ -118,14 +117,15 @@
     #f)
    (quit (quit '()))))
 
-(define (run-in-vat block-specs)
+(define (run-in-vat block-specs port)
   (define finished-cond (make-condition))
 
-  (define timers (spawn ^timers))
+  (define-values (timers timers-admin)
+    (spawn-timers))
 
   (define bar
-    (spawn ^swaybar (current-output-port) finished-cond
-           (spawn ^facet timers 'pause)))
+    (spawn ^swaybar (spawn ^printer port) finished-cond
+           timers-admin))
 
   (define cells
     (map (λ __ (spawn ^notifying-cell bar)) block-specs))
@@ -140,24 +140,28 @@
 
   ($ bar 'init cells blocks)
   ($ timers 'register 0 1 bar 'tick)
-  (values bar finished-cond))
+  (values bar finished-cond timers-admin))
 
-(define log-file
-  (make-parameter "/home/liate/.log/swaybar.scm.log"))
-
-(define (run block-specs)
+(define (run block-specs port)
   (define vat (spawn-vat))
-  (call-with-output-file (log-file)
-    (λ (port)
-      (parameterize ((current-error-port port))
-        (let ((bar finished-cond
-                   (with-vat vat
-                             (run-in-vat block-specs))))
-          (sigaction SIGINT
-            (λ (sig)
-              (restore-signals)
-              (with-vat vat (<- bar 'quit))))
-          (perform-operation (wait-operation finished-cond)))))))
+  (let ((bar finished-cond timers
+             (with-vat vat
+                       (run-in-vat block-specs port))))
+    (sigaction SIGUSR1
+      (λ (sig)
+        (<-np-extern timers 'pause))
+      0)
+    (sigaction SIGCONT
+      (λ (sig)
+        (<-np-extern timers 'resume))
+      0)
+    (sigaction SIGINT
+      (λ (sig)
+        (restore-signals)
+        (<-np-extern bar 'quit))
+      0)
+    (perform-operation (wait-operation finished-cond))))
 
 (define-syntax-rule (swaybar (name ctor secs args ...) ...)
-  (run (list (list 'name ctor secs args ...) ...)))
+  (run (list (list 'name ctor secs args ...) ...)
+       (current-output-port)))

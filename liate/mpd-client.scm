@@ -20,6 +20,7 @@
   #:use-module (liate utils io)
   #:use-module (liate utils proc-tools)
   #:use-module (liate utils hashmaps)
+  #:use-module (liate goblins)
 
   #:export (make-mpd
             ^mpd
@@ -393,21 +394,25 @@ the attributes may be `*` to match any value of the attribute).
         (error "Not a valid command ~s" name))
       (apply proc args)))
 
+  (define (call-with-open-mpd-port-vow mpd proc)
+    (call-with-port-vow (mpd-open-port mpd)
+      (λ (port)
+        (assert (string-prefix? "OK MPD " (get-line port)))
+        (proc port))))
+
   (match-lambda*
     (('begin (cmds . args) ...)
      (let ((body-procs (map get-command cmds args)))
-       (fibrous
-        (call-with-open-mpd-port mpd
-          (λ (port)
-            (let rec ((procs body-procs))
-              (if (null? procs) procs
-                  (cons ((car procs) port)
-                        (rec (cdr procs))))))))))
+       (call-with-open-mpd-port-vow mpd
+         (λ (port)
+           (let rec ((procs body-procs))
+             (if (null? procs) procs
+                 (cons ((car procs) port)
+                       (rec (cdr procs)))))))))
     ((cmd . args)
      (let ((proc (get-command cmd args)))
-       (fibrous
-        (call-with-open-mpd-port mpd
-          proc))))))
+       (call-with-open-mpd-port-vow mpd
+         proc)))))
 
 ;;;; Commands
 

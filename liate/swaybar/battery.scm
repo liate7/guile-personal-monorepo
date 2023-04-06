@@ -17,7 +17,7 @@
   #:export (^battery-block))
 
 (define (battery-status-vow)
-  (on (fibrous (call-with-port (open-pipe* "r" "acpi") get-string-all))
+  (on (call-with-port-vow (open-pipe* "r" "acpi") get-string-all)
       (λ (str)
         ;; state
         (list (cond ((string-match "Discharging" str) 'discharging)

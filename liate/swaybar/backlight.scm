@@ -20,10 +20,12 @@
    ((tick)
     (unless ($ quit?)
       (on (all-of
-           (fibrous (call-with-input-file "/sys/class/backlight/edp-backlight/max_brightness"
-                      read))
-           (fibrous (call-with-input-file "/sys/class/backlight/edp-backlight/brightness"
-                      read)))
+           (call-with-port-vow (open-input-file
+                                "/sys/class/backlight/edp-backlight/max_brightness")
+                               read)
+           (call-with-port-vow (open-input-file
+                                "/sys/class/backlight/edp-backlight/brightness")
+                               read))
           (match-lambda
             ((max cur)
              (<- cell
