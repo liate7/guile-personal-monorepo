@@ -15,7 +15,7 @@
             list-index-all
             inclusive-range
             group-by
-            mapcat))
+            range))
 
 (define (flatten lst)
   "As the `tflatten' transducer, but just for lists"
@@ -105,6 +105,15 @@ where the distance between each item is STEP."
   ((pair-juxt car (compose reverse cdr))
    (fold group-sum '() lst)))
 
-(define (mapcat proc lst1 . lsts)
-  (concatenate
-   (apply map proc lst1 lsts)))
+(define range
+  (case-lambda*
+   "Creates a list of the items in [START, BEFORE), increasing by STEP (default 1) each time.
+If given one argument, it is the BEFORE, with START defaulting to 0.
+
+Like python's ~range~, but accepts negative and fractional steps."
+   ((before)
+    (iota before))
+   ((start before #:optional (step 1))
+    (iota (floor/ (- before start) step)
+          start
+          step))))

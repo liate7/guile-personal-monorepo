@@ -4,6 +4,7 @@
   #:use-module (goblins actor-lib methods)
   #:use-module (srfi srfi-1)
   #:use-module (srfi srfi-2)
+  #:use-module (srfi srfi-26)
   #:use-module (srfi srfi-71)
   #:use-module (ice-9 control)
   #:use-module (ice-9 match)
@@ -16,10 +17,13 @@
 
 (define (format-current-song cur)
   (if (not cur) "none"
-      (format #f "[~a] ~a"
+      (format #f "[~a] ~a~a"
               (failure-> (hashmap-ref cur 'composer)
                          (hashmap-ref cur 'album)
                          "")
+              (hashmap-ref cur 'grouping
+                           (const "")
+                           (cute string-append <> ": "))
               (failure-> (hashmap-ref cur 'title)
                          (hashmap-ref cur 'file)))))
 
@@ -35,17 +39,21 @@
           ((status cur)
            (<- cell
                (string-join
-                (list (format-current-song cur)
-                      (match (hashmap-ref/default status 'state '?)
-                        ('play "▶")
-                        ('pause "⏸")
-                        ('stop "⏹")
-                        ('? "unk"))
-                      (let/ec ret
-                        (let ((fail (λ () (ret "n/a"))))
-                          (progress-bar (* 100 (/ (hashmap-ref status 'elapsed fail)
-                                                  (hashmap-ref status 'duration fail)))
-                                        10))))))))
+                (cons* (format-current-song cur)
+                       (match (hashmap-ref/default status 'state '?)
+                         ('play "▶")
+                         ('pause "⏸")
+                         ('stop "⏹")
+                         ('? "unk"))
+                       (let/ec ret
+                         (let ((fail (λ () (ret "n/a"))))
+                           (progress-bar (* 100 (/ (hashmap-ref status 'elapsed fail)
+                                                   (hashmap-ref status 'duration fail)))
+                                         10)))
+                       (match (hashmap-ref/default status 'single '?)
+                         (#t (list "s"))
+                         ('oneshot (list "1"))
+                         (_ '())))))))
         #:catch
         (lambda (err)
           (<- cell "Error getting MPD info"))))

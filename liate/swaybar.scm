@@ -9,36 +9,38 @@
   #:use-module (fibers conditions)
   #:use-module (fibers operations)
   #:use-module (srfi srfi-1)
+  #:use-module (srfi srfi-9)
   #:use-module (srfi srfi-19)
   #:use-module (srfi srfi-71)
   #:use-module (ice-9 curried-definitions)
+  #:use-module (ice-9 match)
   #:use-module (liate goblins)
+  #:use-module (liate goblins dbus)
+  #:use-module (liate goblins http)
   #:use-module (json)
   #:use-module (pipe)
-  #:export (run run-in-vat ^date-block ^block-spawner swaybar))
+  #:export (run run-in-vat ^date-block dbus-object http ^block-spawner swaybar))
 
-(define date-format
-  (make-parameter "~1 (~a, UTC~z) ~3"))
-
-(define (^block-spawner bcom timers)
-  (methods
-   ((spawn cell name ctor secs)
-    (define block (spawn-named name ctor cell))
-    (<- timers 'register 0 secs block 'tick)
-    block)))
-
-(define (^date-block _bcom cell)
+(define* (^date-block _bcom cell format #:optional short-format)
   (define-cell quit? #f)
-  (methods
-   ((tick)
-    (unless ($ quit?)
-      (<- cell
-          (date->string (current-date)
-                        (date-format)))))
-   ((quit)
-    ($ quit? #t))))
+  (define (only-long date)
+    (date->string date format))
+  (define (long-and-short date)
+    `((full_text
+       . ,(only-long date))
+      (short_text
+       . ,(date->string date short-format))))
+  (let ((outputter (if short-format long-and-short only-long)))
+    (methods
+     ((tick)
+      (unless ($ quit?)
+        (<- cell
+            (outputter (current-date)))))
+     ((quit)
+      ($ quit? #t)))))
 
-(define header `((version . 1) (stop_signal . ,SIGUSR1)))
+(define stop-signal SIGUSR1)
+(define header `((version . 1) (stop_signal . ,stop-signal)))
 
 ;; Format:
 ;; header #\newline (array-stream (array values) ...)
@@ -78,6 +80,7 @@
   ;; The naive way to do this both leads to way too many updates and
   ;; leads to the output getting clobbered sometimes.
   ;; (Don't know why, given there should only be one writer, but who knows.)
+  ;; (At least I /think/ that's what's happening.)
   ;; Instead, the system has two (post-initialization) behaviors:
   ;; the write-next behavior writes the json on the next changed block,
   ;; then goes to the waiting-for-tick behavior;
@@ -117,37 +120,50 @@
     #f)
    (quit (quit '()))))
 
-(define (run-in-vat block-specs port)
-  (define finished-cond (make-condition))
+(define-record-type <dbus-object>
+  (dbus-object bus destination path)
+  dbus-object?
+  (bus dbus-object-bus)
+  (destination dbus-object-destination)
+  (path dbus-object-path))
 
-  (define-values (timers timers-admin)
-    (spawn-timers))
+(define http (list 'http))
+(define (http-object? obj)
+  (eq? obj http))
 
-  (define bar
-    (spawn ^swaybar (spawn ^printer port) finished-cond
-           timers-admin))
+(define (^block-spawner bcom timers system-bus session-bus http)
+  (define hydrate-dbus-object
+    (match-lambda
+      ((? dbus-object?
+          (= dbus-object-bus bus)
+          (= dbus-object-destination dest)
+          (= dbus-object-path path))
+       (match bus
+         ('system
+          (<- system-bus 'spawn-proxy path dest))
+         ('session
+          (<- session-bus 'spawn-proxy path dest))))
+      ((? http-object?)
+       http)
+      (obj obj)))
+  (methods
+   ((spawn cell name ctor secs #:rest args)
+    (define block
+      (apply spawn-named name ctor cell
+             (map hydrate-dbus-object args)))
+    (<- timers 'register 0 secs block 'tick)
+    block)))
 
-  (define cells
-    (map (λ __ (spawn ^notifying-cell bar)) block-specs))
-
-  (define spawner (spawn ^block-spawner timers))
-
-  (define blocks
-    (map (λ (spec cell)
-           (apply $ spawner 'spawn cell spec))
-         block-specs
-         cells))
-
-  ($ bar 'init cells blocks)
-  ($ timers 'register 0 1 bar 'tick)
-  (values bar finished-cond timers-admin))
+(define-syntax-rule (swaybar (name ctor secs args ...) ...)
+  (run (list (list 'name ctor secs args ...) ...)
+       (current-output-port)))
 
 (define (run block-specs port)
   (define vat (spawn-vat))
   (let ((bar finished-cond timers
              (with-vat vat
                        (run-in-vat block-specs port))))
-    (sigaction SIGUSR1
+    (sigaction stop-signal
       (λ (sig)
         (<-np-extern timers 'pause))
       0)
@@ -162,6 +178,31 @@
       0)
     (perform-operation (wait-operation finished-cond))))
 
-(define-syntax-rule (swaybar (name ctor secs args ...) ...)
-  (run (list (list 'name ctor secs args ...) ...)
-       (current-output-port)))
+(define (run-in-vat block-specs port)
+  (define finished-cond (make-condition))
+
+  (define-values (timers timers-admin)
+    (spawn-timers))
+
+  (define bar
+    (spawn ^swaybar (spawn ^printer port) finished-cond
+           timers-admin))
+
+  (define cells
+    (map (λ __ (spawn ^notifying-cell bar)) block-specs))
+
+  (define spawner
+    (spawn ^block-spawner timers
+           (spawn-bus 'system)
+           (spawn-bus 'session)
+           (spawn ^http-manager)))
+
+  (define blocks
+    (map (λ (spec cell)
+           (apply $ spawner 'spawn cell spec))
+         block-specs
+         cells))
+
+  ($ bar 'init cells blocks)
+  ($ timers 'register 0 1 bar 'tick)
+  (values bar finished-cond timers-admin))

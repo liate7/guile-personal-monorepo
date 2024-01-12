@@ -359,6 +359,7 @@ the attributes may be `*` to match any value of the attribute).
                        (Format audio-format ,read-audio-format)
                        (duration ,string->number)
                        (Artist artist)
+                       (Grouping grouping)
                        (Track track ,string->number)
                        (Pos pos ,string->number)))))
 
@@ -394,7 +395,7 @@ the attributes may be `*` to match any value of the attribute).
         (error "Not a valid command ~s" name))
       (apply proc args)))
 
-  (define (call-with-open-mpd-port-vow mpd proc)
+  (define (call-with-open-mpd-port-vow proc)
     (call-with-port-vow (mpd-open-port mpd)
       (λ (port)
         (assert (string-prefix? "OK MPD " (get-line port)))
@@ -403,7 +404,7 @@ the attributes may be `*` to match any value of the attribute).
   (match-lambda*
     (('begin (cmds . args) ...)
      (let ((body-procs (map get-command cmds args)))
-       (call-with-open-mpd-port-vow mpd
+       (call-with-open-mpd-port-vow
          (λ (port)
            (let rec ((procs body-procs))
              (if (null? procs) procs
@@ -411,7 +412,7 @@ the attributes may be `*` to match any value of the attribute).
                        (rec (cdr procs)))))))))
     ((cmd . args)
      (let ((proc (get-command cmd args)))
-       (call-with-open-mpd-port-vow mpd
+       (call-with-open-mpd-port-vow
          proc)))))
 
 ;;;; Commands

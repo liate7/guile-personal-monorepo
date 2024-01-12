@@ -21,15 +21,18 @@
     (unless ($ quit?)
       (on (all-of
            (call-with-port-vow (open-input-file
-                                "/sys/class/backlight/edp-backlight/max_brightness")
+                                "/sys/class/backlight/intel_backlight/max_brightness")
                                read)
            (call-with-port-vow (open-input-file
-                                "/sys/class/backlight/edp-backlight/brightness")
+                                "/sys/class/backlight/intel_backlight/brightness")
                                read))
           (match-lambda
             ((max cur)
              (<- cell
                  (format #f "BL ~3d%"
-                         (floor/ (* 100 cur) max))))))))
+                         (floor/ (* 100 cur) max)))))
+          #:catch
+          (λ (err)
+            (<- cell " ERROR ")))))
    ((quit)
     ($ quit? #t))))
