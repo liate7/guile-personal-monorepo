@@ -77,41 +77,28 @@
             (list->vector)
             (scm->json-string #:pretty #f))))
 
-  ;; The naive way to do this both leads to way too many updates and
-  ;; leads to the output getting clobbered sometimes.
-  ;; (Don't know why, given there should only be one writer, but who knows.)
-  ;; (At least I /think/ that's what's happening.)
-  ;; Instead, the system has two (post-initialization) behaviors:
-  ;; the write-next behavior writes the json on the next changed block,
-  ;; then goes to the waiting-for-tick behavior;
-  ;; the waiting-for-tick behavior waits for the timers system to send it 'tick,
-  ;; then goes to the write-next behavior.
-  (define (write-next-beh cells blocks)
-    (methods
-     ((changed _ignore)
-      (unless (any (compose not $) cells)
-        (write-swaybar-json cells)
-        (bcom (waiting-for-tick-beh cells blocks))))
-     ((tick) #f)
-     ((block-values)
-      (map $ cells))
-     (quit (quit blocks))))
-
-  (define (waiting-for-tick-beh cells blocks)
-    (methods
-     ((changed _ignore) #f)
-     ((tick)
-      (bcom (write-next-beh cells blocks)))
-     ((block-values)
-      (map $ cells))
-     (quit (quit blocks))))
-
   (define (initialize! cells blocks)
     (<- printer 'print
         (scm->json-string header)
         "\n[\n")
 
-    (write-next-beh cells blocks))
+    (define initializing-beh
+      (methods
+       ((changed _ignore)
+        (when (every $ cells)
+          (bcom initialized-beh)))
+       ((block-values)
+        (map $ cells))
+       (quit (quit blocks))))
+
+    (define initialized-beh
+      (methods
+       ((changed _ignore)
+        (write-swaybar-json cells))
+       ((block-values)
+        (map $ cells))
+       (quit (quit blocks))))
+    initializing-beh)
 
   (methods
    ((init cells blocks)
@@ -204,5 +191,4 @@
          cells))
 
   ($ bar 'init cells blocks)
-  ($ timers 'register 0 1 bar 'tick)
   (values bar finished-cond timers-admin))
