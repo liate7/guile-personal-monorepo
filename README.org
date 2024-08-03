@@ -1,0 +1,3 @@
+Since Guile wants to find code in ~$GUIX_LOAD_PATH~ and
+relies on Guix instead of a language-specific package manager,
+I've put all my random Guile code into a single monorepo.
